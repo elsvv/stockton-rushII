@@ -1060,6 +1060,34 @@ export function updateGameState(
 }
 
 /**
+ * Rescale every horizontal coordinate in the world by `scale`.
+ *
+ * The world is laid out in canvas pixels, so a window resize (entering fullscreen
+ * counts) would otherwise leave the submarines and the obstacle field sitting at
+ * coordinates from the old width - everything bunched against one edge.
+ */
+export function rescaleWorldX(state: GameState, scale: number): GameState {
+    if (!Number.isFinite(scale) || scale <= 0 || scale === 1) return state;
+
+    const scalePlayer = (player: PlayerVehicle): PlayerVehicle => ({
+        ...player,
+        x: player.x * scale,
+    });
+
+    return {
+        ...state,
+        players: {
+            player1: scalePlayer(state.players.player1),
+            player2: scalePlayer(state.players.player2),
+        },
+        obstacles: state.obstacles.map((o) => ({ ...o, x: o.x * scale })),
+        projectiles: state.projectiles.map((p) => ({ ...p, x: p.x * scale })),
+        pickups: state.pickups.map((p) => ({ ...p, x: p.x * scale })),
+        anglerFish: state.anglerFish.map((f) => ({ ...f, x: f.x * scale })),
+    };
+}
+
+/**
  * Get the result summary for display.
  */
 export function getGameResults(state: GameState) {

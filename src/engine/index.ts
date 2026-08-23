@@ -22,7 +22,7 @@ export { PlayerState, ObstacleType, DeathCause } from './types';
 export { SeededRNG, createRNG, generateRandomSeed } from './rng';
 
 // Game State
-export { createInitialState, updateGameState, getGameResults } from './gameState';
+export { createInitialState, updateGameState, getGameResults, rescaleWorldX } from './gameState';
 
 // Obstacle Generation
 export { generateObstacles, updateObstacles, getVisibleObstacles } from './obstacleGenerator';

@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createInitialState, updateGameState } from '../gameState';
+import { createInitialState, updateGameState, rescaleWorldX } from '../gameState';
 import type { PlayerInputFrame, PlayerId } from '../types';
 import { PlayerState, PickupType } from '../types';
 import { FIXED_DT, CANVAS_WIDTH, CANVAS_HEIGHT, MAX_DEPTH } from '../config';
@@ -317,6 +317,32 @@ describe('Passengers', () => {
                 expect(alive).toBe(Math.max(0, Math.min(player.hp, player.passengers.length)));
             }
         }
+    });
+});
+
+describe('World rescaling', () => {
+    it('stretches every horizontal coordinate by the same factor', () => {
+        let state = createInitialState(defaultConfig);
+        for (let i = 0; i < 120; i++) {
+            state = updateGameState(state, createInputs(i), FIXED_DT);
+        }
+
+        const scaled = rescaleWorldX(state, 2);
+
+        expect(scaled.players.player1.x).toBe(state.players.player1.x * 2);
+        expect(scaled.players.player2.x).toBe(state.players.player2.x * 2);
+        expect(scaled.obstacles.length).toBe(state.obstacles.length);
+        scaled.obstacles.forEach((o, i) => {
+            expect(o.x).toBe(state.obstacles[i].x * 2);
+            expect(o.y).toBe(state.obstacles[i].y);
+        });
+    });
+
+    it('leaves the state untouched for a no-op scale', () => {
+        const state = createInitialState(defaultConfig);
+        expect(rescaleWorldX(state, 1)).toBe(state);
+        expect(rescaleWorldX(state, 0)).toBe(state);
+        expect(rescaleWorldX(state, Number.NaN)).toBe(state);
     });
 });
 

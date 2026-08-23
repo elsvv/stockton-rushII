@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameState } from '../engine/types';
 import { PlayerState } from '../engine/types';
-import { createInitialState, updateGameState } from '../engine/gameState';
+import { createInitialState, updateGameState, rescaleWorldX } from '../engine/gameState';
 import { generateRandomSeed } from '../engine/rng';
 import { FIXED_DT, MAX_DEPTH, setCanvasDimensions } from '../engine/config';
 import { GameCanvas } from './GameCanvas';
@@ -49,22 +49,26 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
     // Pause menu
     const [paused, setPaused] = useState(false);
 
+    // Mouse cursor: hidden during play, but shown whenever the mouse moves so the
+    // player can actually aim at the on-screen buttons.
+    const [pointerVisible, setPointerVisible] = useState(true);
+
     // Seed of the round currently being played (changes on in-game restart)
     const [currentSeed, setCurrentSeed] = useState(seed);
 
-    // Update canvas dimensions in config
-    useEffect(() => {
+    const [gameState, setGameState] = useState<GameState>(() => {
+        // Must run BEFORE the world is generated: start positions and the obstacle
+        // field are laid out in canvas pixels, and the engine reads them from config.
+        // Doing this in an effect left the first screen laid out for a 1920px window.
         setCanvasDimensions(dimensions.width, dimensions.height);
-    }, [dimensions]);
 
-    const [gameState, setGameState] = useState<GameState>(() =>
-        createInitialState({
+        return createInitialState({
             seed,
             maxDepth: MAX_DEPTH,
             canvasWidth: dimensions.width,
             canvasHeight: dimensions.height,
-        })
-    );
+        });
+    });
 
     const { sampleInputs, sampleMovementOnly, clearInputs } = useKeyboardInput();
     const gameStateRef = useRef(gameState);
@@ -95,6 +99,25 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
         return () => clearTimeout(timer);
     }, []);
 
+    // Show the cursor on movement, hide it again after a moment of stillness
+    useEffect(() => {
+        let hideTimer: number | undefined;
+
+        const handleMove = () => {
+            setPointerVisible(true);
+            if (hideTimer) clearTimeout(hideTimer);
+            hideTimer = window.setTimeout(() => setPointerVisible(false), 2000);
+        };
+
+        handleMove();
+        window.addEventListener('mousemove', handleMove);
+
+        return () => {
+            window.removeEventListener('mousemove', handleMove);
+            if (hideTimer) clearTimeout(hideTimer);
+        };
+    }, []);
+
     // Track fullscreen state (used to decide which top badge to show)
     const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
 
@@ -104,7 +127,10 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
         return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
 
-    // Handle window resize
+    // Handle window resize: entering fullscreen fires this too, and the world is
+    // laid out in pixels, so everything horizontal is stretched to the new width.
+    const lastWidthRef = useRef(dimensions.width);
+
     useEffect(() => {
         const handleResize = () => {
             setDimensions({
@@ -116,6 +142,21 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+
+    useEffect(() => {
+        setCanvasDimensions(dimensions.width, dimensions.height);
+
+        const previousWidth = lastWidthRef.current;
+        lastWidthRef.current = dimensions.width;
+
+        if (previousWidth === dimensions.width || previousWidth <= 0) return;
+
+        const scale = dimensions.width / previousWidth;
+        const rescaled = rescaleWorldX(gameStateRef.current, scale);
+        gameStateRef.current = rescaled;
+        prevStateRef.current = rescaled;
+        setGameState(rescaled);
+    }, [dimensions]);
 
     // Initialize audio on first interaction
     const initAudio = useCallback(async () => {
@@ -168,6 +209,15 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
             console.warn('Fullscreen request failed:', e);
         }
     }, [initAudio]);
+
+    /** Click anywhere in the game: enable sound and go fullscreen (paused = sound only) */
+    const handleSurfaceClick = useCallback(() => {
+        if (paused) {
+            void initAudio();
+            return;
+        }
+        void requestFullscreen();
+    }, [paused, initAudio, requestFullscreen]);
 
     // Keep ref in sync with state
     useEffect(() => {
@@ -456,7 +506,7 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
     return (
         <div
             ref={containerRef}
-            onClick={initAudio}
+            onClick={handleSurfaceClick}
             style={{
                 position: 'fixed',
                 top: 0,
@@ -465,7 +515,7 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
                 height: '100vh',
                 backgroundColor: '#0A1628',
                 overflow: 'hidden',
-                cursor: paused ? 'default' : 'none',
+                cursor: paused || !gameStarted || pointerVisible ? 'default' : 'none',
             }}
         >
             <GameCanvas gameState={gameState} width={dimensions.width} height={dimensions.height} />
@@ -745,11 +795,11 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
                     onClick={requestFullscreen}
                     style={{
                         position: 'absolute',
-                        top: 20,
+                        top: 96,
                         left: '50%',
                         transform: 'translateX(-50%)',
                         padding: '10px 20px',
-                        backgroundColor: 'rgba(74, 144, 217, 0.8)',
+                        backgroundColor: 'rgba(74, 144, 217, 0.85)',
                         color: 'white',
                         border: 'none',
                         borderRadius: '8px',
@@ -759,7 +809,7 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
                         pointerEvents: 'auto',
                     }}
                 >
-                    🔊 Click to Enable Sound & Fullscreen
+                    🔊 Click anywhere for sound & fullscreen
                 </button>
             )}
 
