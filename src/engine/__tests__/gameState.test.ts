@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { createInitialState, updateGameState } from '../gameState';
 import type { PlayerInputFrame, PlayerId } from '../types';
-import { PlayerState } from '../types';
+import { PlayerState, PickupType } from '../types';
 import { FIXED_DT, CANVAS_WIDTH, CANVAS_HEIGHT, MAX_DEPTH } from '../config';
 
 const defaultConfig = {
@@ -254,6 +254,69 @@ describe('Game Mechanics', () => {
 
         expect(state.gameOver).toBe(true);
         expect(state.winner).not.toBeNull();
+    });
+});
+
+describe('Passengers', () => {
+    it('empties one seat per HP lost', () => {
+        const state = createInitialState(defaultConfig);
+        const damaged = {
+            ...state,
+            players: {
+                ...state.players,
+                player1: { ...state.players.player1, hp: 2 },
+            },
+        };
+
+        const next = updateGameState(damaged, createInputs(0), FIXED_DT);
+
+        expect(next.players.player1.passengers.filter((p) => p.alive).length).toBe(2);
+    });
+
+    it('brings passengers back when HP is restored by a pickup', () => {
+        const state = createInitialState(defaultConfig);
+        const player = state.players.player1;
+
+        const damaged = {
+            ...state,
+            players: {
+                ...state.players,
+                player1: {
+                    ...player,
+                    hp: 2,
+                    passengers: player.passengers.map((p, i) => ({ ...p, alive: i < 2 })),
+                },
+            },
+            pickups: [
+                {
+                    id: 'test-health',
+                    type: PickupType.Health,
+                    x: player.x,
+                    y: player.y,
+                    size: 20,
+                    active: true,
+                },
+            ],
+        };
+
+        const next = updateGameState(damaged, createInputs(0), FIXED_DT);
+
+        expect(next.players.player1.hp).toBe(3);
+        expect(next.players.player1.passengers.filter((p) => p.alive).length).toBe(3);
+    });
+
+    it('keeps alive passengers equal to HP for the whole dive', () => {
+        let state = createInitialState(defaultConfig);
+
+        for (let i = 0; i < 400; i++) {
+            state = updateGameState(state, createInputs(i), FIXED_DT);
+
+            for (const player of Object.values(state.players)) {
+                if (player.passengers.length === 0) continue;
+                const alive = player.passengers.filter((p) => p.alive).length;
+                expect(alive).toBe(Math.max(0, Math.min(player.hp, player.passengers.length)));
+            }
+        }
     });
 });
 

@@ -291,17 +291,11 @@ function checkProjectileCollisions(
                 p.id === proj.id ? { ...p, active: false } : p
             );
 
-            const prevHp = enemy.hp;
             let newEnemy = {
                 ...enemy,
                 hp: Math.max(0, enemy.hp - proj.damage),
                 invincibilityFrames: INVINCIBILITY_FRAMES,
             };
-
-            // Kill passengers for each HP lost
-            for (let i = 0; i < prevHp - newEnemy.hp; i++) {
-                newEnemy.passengers = killPassenger(newEnemy.passengers);
-            }
 
             // Check for death
             if (newEnemy.hp <= 0) {
@@ -310,7 +304,6 @@ function checkProjectileCollisions(
                     state: PlayerState.Dead,
                     deathCause: DeathCause.Imploded,
                     implosionFrame: 1,
-                    passengers: newEnemy.passengers.map((p) => ({ ...p, alive: false })),
                 };
             }
 
@@ -439,18 +432,48 @@ function updatePassengerPhysics(
 }
 
 /**
- * Kill a passenger (called when HP decreases).
+ * Keep the crew in sync with HP: one passenger per hit point.
+ *
+ * Damage empties seats from the back of the sub, healing puts the crew back into
+ * the same seats - a repaired hull with an empty cabin looked like a bug to players.
+ * Revived passengers start centred so they don't pop in mid-sway.
  */
-function killPassenger(passengers: Passenger[]): Passenger[] {
-    const newPassengers = [...passengers];
-    // Find the last alive passenger and kill them
-    for (let i = newPassengers.length - 1; i >= 0; i--) {
-        if (newPassengers[i].alive) {
-            newPassengers[i] = { ...newPassengers[i], alive: false };
-            break;
+function syncPassengersToHp(passengers: Passenger[], hp: number): Passenger[] {
+    const seats = passengers.length;
+    if (seats === 0) return passengers;
+
+    const target = Math.max(0, Math.min(hp, seats));
+    let alive = 0;
+    for (const passenger of passengers) {
+        if (passenger.alive) alive++;
+    }
+    if (alive === target) return passengers;
+
+    const result = [...passengers];
+
+    // Too many alive - empty seats from the back
+    for (let i = seats - 1; i >= 0 && alive > target; i--) {
+        if (result[i].alive) {
+            result[i] = { ...result[i], alive: false };
+            alive--;
         }
     }
-    return newPassengers;
+
+    // Too few alive - refill the front-most empty seats
+    for (let i = 0; i < seats && alive < target; i++) {
+        if (!result[i].alive) {
+            result[i] = { ...result[i], alive: true, offsetX: 0, velocityX: 0 };
+            alive++;
+        }
+    }
+
+    return result;
+}
+
+/** Apply the crew invariant to a player. */
+function withSyncedPassengers(player: PlayerVehicle): PlayerVehicle {
+    const passengers = syncPassengersToHp(player.passengers, player.hp);
+    return passengers === player.passengers ? player : { ...player, passengers };
 }
 
 /**
@@ -681,8 +704,7 @@ function updatePlayer(
             newPlayer.state = PlayerState.Dead;
             newPlayer.deathCause = DeathCause.Imploded;
             newPlayer.implosionFrame = 1; // Start implosion animation
-            // Kill all passengers
-            newPlayer.passengers = newPlayer.passengers.map((p) => ({ ...p, alive: false }));
+            newPlayer.hp = 0; // crew is synced from HP
             return { player: newPlayer, collidedObstacles };
         }
     } else if (newPlayer.state === PlayerState.Ascending) {
@@ -731,27 +753,17 @@ function updatePlayer(
                     const damage = COLLISION_DAMAGE[obstacle.type];
                     const wear = COLLISION_WEAR[obstacle.type];
 
-                    const prevHp = newPlayer.hp;
                     newPlayer.hp -= damage;
                     newPlayer.wear += wear;
                     newPlayer.invincibilityFrames = INVINCIBILITY_FRAMES;
 
-                    // Kill passengers for each HP lost
-                    for (let i = 0; i < prevHp - newPlayer.hp; i++) {
-                        newPlayer.passengers = killPassenger(newPlayer.passengers);
-                    }
-
                     // Check for death
                     if (newPlayer.hp <= 0 || newPlayer.wear >= 100) {
                         newPlayer.wear = Math.min(newPlayer.wear, 100);
+                        newPlayer.hp = 0; // crew is synced from HP
                         newPlayer.state = PlayerState.Dead;
                         newPlayer.deathCause = DeathCause.Imploded;
                         newPlayer.implosionFrame = 1; // Start implosion animation
-                        // Kill all remaining passengers
-                        newPlayer.passengers = newPlayer.passengers.map((p) => ({
-                            ...p,
-                            alive: false,
-                        }));
                         return { player: newPlayer, collidedObstacles };
                     }
                 }
@@ -1012,11 +1024,16 @@ export function updateGameState(
                     ...player,
                     hp: Math.max(0, newHp),
                     invincibilityFrames: INVINCIBILITY_FRAMES,
-                    passengers: newHp < player.hp ? killPassenger(player.passengers) : player.passengers,
                 },
             };
         }
     }
+
+    // One passenger per hit point, always - after every damage and heal this frame
+    newPlayers = {
+        player1: withSyncedPassengers(newPlayers.player1),
+        player2: withSyncedPassengers(newPlayers.player2),
+    };
 
     // Update current max depth
     const newMaxDepth = Math.max(state.currentMaxDepth, newPlayers.player1.y, newPlayers.player2.y);
