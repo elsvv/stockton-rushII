@@ -41,7 +41,14 @@ function App() {
         <>
             {screen === 'menu' && <MainMenu onStartGame={handleStartGame} />}
 
-            {screen === 'game' && <GameView key={seed} seed={seed} onGameOver={handleGameOver} />}
+            {screen === 'game' && (
+                <GameView
+                    key={seed}
+                    seed={seed}
+                    onGameOver={handleGameOver}
+                    onExitToMenu={handleMainMenu}
+                />
+            )}
 
             {screen === 'gameOver' && finalGameState && (
                 <GameOverScreen

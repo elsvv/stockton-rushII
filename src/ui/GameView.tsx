@@ -7,19 +7,32 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameState } from '../engine/types';
 import { PlayerState } from '../engine/types';
 import { createInitialState, updateGameState } from '../engine/gameState';
+import { generateRandomSeed } from '../engine/rng';
 import { FIXED_DT, MAX_DEPTH, setCanvasDimensions } from '../engine/config';
 import { GameCanvas } from './GameCanvas';
 import { HUD } from './HUD';
 import { useKeyboardInput } from './useKeyboardInput';
+import { useSystemControls } from './useSystemControls';
+import { PauseMenu } from './PauseMenu';
+import type { PauseMenuAction } from './PauseMenu';
 import { soundEngine } from '../audio/SoundEngine';
 import { vibrateGamepad, VibrationPatterns } from '../audio/vibrationEngine';
+
+/** How long "GAME OVER" stays on screen before the results screen */
+const GAME_OVER_DELAY_MS = 1500;
+
+/** Master volume during play and while paused */
+const BASE_VOLUME = 0.7;
+const PAUSED_VOLUME = 0.12;
 
 interface GameViewProps {
     seed: number;
     onGameOver: (state: GameState) => void;
+    /** Leave the round and go back to the main menu */
+    onExitToMenu: () => void;
 }
 
-export function GameView({ seed, onGameOver }: GameViewProps) {
+export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [dimensions, setDimensions] = useState({
         width: window.innerWidth,
@@ -32,6 +45,12 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
     const [player1Ready, setPlayer1Ready] = useState(false);
     const [player2Ready, setPlayer2Ready] = useState(false);
     const gameStarted = player1Ready && player2Ready;
+
+    // Pause menu
+    const [paused, setPaused] = useState(false);
+
+    // Seed of the round currently being played (changes on in-game restart)
+    const [currentSeed, setCurrentSeed] = useState(seed);
 
     // Update canvas dimensions in config
     useEffect(() => {
@@ -47,7 +66,7 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
         })
     );
 
-    const { sampleInputs, sampleMovementOnly } = useKeyboardInput();
+    const { sampleInputs, sampleMovementOnly, clearInputs } = useKeyboardInput();
     const gameStateRef = useRef(gameState);
     const prevStateRef = useRef(gameState);
     const animationFrameRef = useRef<number | undefined>(undefined);
@@ -69,13 +88,20 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
         // Small delay to ensure the component is mounted
         const timer = setTimeout(requestFullscreen, 100);
 
-        return () => {
-            clearTimeout(timer);
-            // Exit fullscreen when leaving game
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(() => {});
-            }
-        };
+        // NOTE: fullscreen is deliberately NOT released on unmount. Leaving it would
+        // drop the player out of fullscreen on every game over, and re-entering from
+        // an effect is blocked by the browser (no user gesture) - which used to force
+        // a manual page reload to get back into a playable state.
+        return () => clearTimeout(timer);
+    }, []);
+
+    // Track fullscreen state (used to decide which top badge to show)
+    const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+
+    useEffect(() => {
+        const handleFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
     }, []);
 
     // Handle window resize
@@ -230,32 +256,130 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
     // Track game over state with delay
     const [gameOverDelay, setGameOverDelay] = useState(false);
     const gameOverTimeoutRef = useRef<number | undefined>(undefined);
+    const gameOverHandledRef = useRef(false);
 
-    // Check for game over with delay
+    // Check for game over with delay.
+    // The timeout is guarded by a ref (not by state) - keying it off `gameOverDelay`
+    // made this effect re-run and clear its own timer, so the results screen never
+    // appeared and the round hung on "GAME OVER" forever.
     useEffect(() => {
-        if (gameState.gameOver && !gameOverDelay) {
-            // Start showing "GAME OVER" overlay
-            setGameOverDelay(true);
-            
-            // Delay before transitioning to results screen
-            gameOverTimeoutRef.current = window.setTimeout(() => {
-                onGameOver(gameState);
-            }, 1500); // 1.5 second delay (faster)
-        }
-        
+        if (!gameState.gameOver || gameOverHandledRef.current) return;
+
+        gameOverHandledRef.current = true;
+        setGameOverDelay(true);
+
+        gameOverTimeoutRef.current = window.setTimeout(() => {
+            gameOverTimeoutRef.current = undefined;
+            onGameOver(gameStateRef.current);
+        }, GAME_OVER_DELAY_MS);
+    }, [gameState.gameOver, onGameOver]);
+
+    // Clear the pending results timer only when the view actually goes away
+    useEffect(() => {
         return () => {
             if (gameOverTimeoutRef.current) {
                 clearTimeout(gameOverTimeoutRef.current);
+                gameOverTimeoutRef.current = undefined;
             }
         };
-    }, [gameState.gameOver, gameState, onGameOver, gameOverDelay]);
+    }, []);
 
     // Reset ambient sounds on unmount (keeps context for next game)
     useEffect(() => {
         return () => {
+            soundEngine.setVolume(BASE_VOLUME);
             soundEngine.reset();
         };
     }, []);
+
+    /**
+     * Restart the round in place - no unmount, no page reload, fullscreen is kept.
+     */
+    const restartRound = useCallback(
+        (nextSeed: number) => {
+            if (gameOverTimeoutRef.current) {
+                clearTimeout(gameOverTimeoutRef.current);
+                gameOverTimeoutRef.current = undefined;
+            }
+
+            const freshState = createInitialState({
+                seed: nextSeed,
+                maxDepth: MAX_DEPTH,
+                canvasWidth: dimensions.width,
+                canvasHeight: dimensions.height,
+            });
+
+            gameStateRef.current = freshState;
+            prevStateRef.current = freshState;
+            lastTimeRef.current = 0;
+            accumulatedTimeRef.current = 0;
+            gameOverHandledRef.current = false;
+
+            clearInputs();
+            soundEngine.setVolume(BASE_VOLUME);
+            soundEngine.reset();
+
+            setCurrentSeed(nextSeed);
+            setGameState(freshState);
+            setGameOverDelay(false);
+            setPaused(false);
+            setPlayer1Ready(false);
+            setPlayer2Ready(false);
+        },
+        [dimensions.width, dimensions.height, clearInputs]
+    );
+
+    const togglePause = useCallback(() => {
+        // No point pausing once the round is already over - restart instead.
+        if (gameStateRef.current.gameOver) return;
+
+        setPaused((prev) => {
+            if (prev) {
+                clearInputs();
+                lastTimeRef.current = 0;
+            }
+            return !prev;
+        });
+    }, [clearInputs]);
+
+    const handleQuickRestart = useCallback(() => {
+        restartRound(generateRandomSeed());
+    }, [restartRound]);
+
+    const handlePauseSelect = useCallback(
+        (action: PauseMenuAction) => {
+            switch (action) {
+                case 'continue':
+                    clearInputs();
+                    lastTimeRef.current = 0;
+                    setPaused(false);
+                    break;
+                case 'restartNewSeed':
+                    restartRound(generateRandomSeed());
+                    break;
+                case 'restartSameSeed':
+                    restartRound(currentSeed);
+                    break;
+                case 'mainMenu':
+                    setPaused(false);
+                    onExitToMenu();
+                    break;
+            }
+        },
+        [clearInputs, restartRound, currentSeed, onExitToMenu]
+    );
+
+    // Pause menu / hold-to-restart (keyboard P + Backspace, gamepad START/SELECT)
+    const restartHoldProgress = useSystemControls({
+        onTogglePause: togglePause,
+        onQuickRestart: handleQuickRestart,
+    });
+
+    // Duck the audio while paused
+    useEffect(() => {
+        if (!audioInitialized) return;
+        soundEngine.setVolume(paused ? PAUSED_VOLUME : BASE_VOLUME);
+    }, [paused, audioInitialized]);
 
     // Main game loop
     const gameLoop = useCallback(
@@ -271,6 +395,14 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
 
             if (accumulatedTimeRef.current > 0.2) {
                 accumulatedTimeRef.current = 0.2;
+            }
+
+            // Paused or already finished - keep the frame pump alive but freeze
+            // simulation time, so an in-place restart resumes without re-mounting.
+            if (paused || gameStateRef.current.gameOver) {
+                accumulatedTimeRef.current = 0;
+                animationFrameRef.current = requestAnimationFrame(gameLoop);
+                return;
             }
 
             // Check ready state before game starts
@@ -301,14 +433,13 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
             }
 
             if (newState !== gameStateRef.current) {
+                gameStateRef.current = newState;
                 setGameState(newState);
             }
 
-            if (!newState.gameOver) {
-                animationFrameRef.current = requestAnimationFrame(gameLoop);
-            }
+            animationFrameRef.current = requestAnimationFrame(gameLoop);
         },
-        [sampleInputs, sampleMovementOnly, gameStarted, player1Ready, player2Ready]
+        [sampleInputs, sampleMovementOnly, gameStarted, player1Ready, player2Ready, paused]
     );
 
     // Start/stop game loop
@@ -334,7 +465,7 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
                 height: '100vh',
                 backgroundColor: '#0A1628',
                 overflow: 'hidden',
-                cursor: 'none',
+                cursor: paused ? 'default' : 'none',
             }}
         >
             <GameCanvas gameState={gameState} width={dimensions.width} height={dimensions.height} />
@@ -394,6 +525,17 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
                         }}
                     >
                         Loading results...
+                    </p>
+
+                    <p
+                        style={{
+                            fontSize: '13px',
+                            color: '#5A7A96',
+                            marginTop: '10px',
+                            fontFamily: 'monospace',
+                        }}
+                    >
+                        hold START / Backspace — restart right now
                     </p>
                 </div>
             )}
@@ -501,6 +643,69 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
                     <div style={{ marginTop: '40px', color: '#666', fontSize: '14px' }}>
                         🎮 Gamepad: Press Down on D-pad or Left Stick
                     </div>
+
+                    <div style={{ marginTop: '12px', color: '#4A6A86', fontSize: '13px' }}>
+                        P / START — pause menu &nbsp;·&nbsp; hold START / Backspace — restart
+                    </div>
+                </div>
+            )}
+
+            {/* Pause menu */}
+            {paused && <PauseMenu seed={currentSeed} onSelect={handlePauseSelect} />}
+
+            {/* Hold-to-restart progress ring */}
+            {restartHoldProgress > 0 && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '12px',
+                        zIndex: 300,
+                        pointerEvents: 'none',
+                        fontFamily: 'monospace',
+                    }}
+                >
+                    <svg width="120" height="120" viewBox="0 0 120 120">
+                        <circle
+                            cx="60"
+                            cy="60"
+                            r="52"
+                            fill="rgba(3, 10, 20, 0.65)"
+                            stroke="#22384F"
+                            strokeWidth="8"
+                        />
+                        <circle
+                            cx="60"
+                            cy="60"
+                            r="52"
+                            fill="none"
+                            stroke="#FFA500"
+                            strokeWidth="8"
+                            strokeLinecap="round"
+                            strokeDasharray={2 * Math.PI * 52}
+                            strokeDashoffset={2 * Math.PI * 52 * (1 - restartHoldProgress)}
+                            transform="rotate(-90 60 60)"
+                            style={{ filter: 'drop-shadow(0 0 8px rgba(255, 165, 0, 0.7))' }}
+                        />
+                        <text
+                            x="60"
+                            y="66"
+                            textAnchor="middle"
+                            fill="#FFA500"
+                            fontSize="26"
+                            fontFamily="monospace"
+                        >
+                            {Math.round(restartHoldProgress * 100)}%
+                        </text>
+                    </svg>
+                    <div style={{ color: '#FFA500', fontSize: '15px', letterSpacing: '3px' }}>
+                        RESTARTING…
+                    </div>
                 </div>
             )}
 
@@ -515,6 +720,7 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
                     fontFamily: 'monospace',
                     fontSize: '12px',
                     textAlign: 'center',
+                    whiteSpace: 'nowrap',
                     pointerEvents: 'none',
                     backgroundColor: 'rgba(0,0,0,0.5)',
                     padding: '10px 20px',
@@ -524,13 +730,17 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
                 <div style={{ marginBottom: '4px' }}>
                     <strong>P1:</strong> WASD move | Q eject | E rocket | R mine
                 </div>
-                <div>
+                <div style={{ marginBottom: '4px' }}>
                     <strong>P2:</strong> Arrows move | / eject | . rocket | , mine
+                </div>
+                <div style={{ color: 'rgba(255, 165, 0, 0.75)' }}>
+                    <strong>P</strong> / <strong>START</strong> pause &nbsp;·&nbsp; hold{' '}
+                    <strong>START</strong> or <strong>Backspace</strong> — instant restart
                 </div>
             </div>
 
             {/* Fullscreen button */}
-            {!document.fullscreenElement && (
+            {(!isFullscreen || !audioInitialized) && (
                 <button
                     onClick={requestFullscreen}
                     style={{
@@ -559,11 +769,11 @@ export function GameView({ seed, onGameOver }: GameViewProps) {
                     style={{
                         position: 'absolute',
                         top: 20,
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        color: 'rgba(255, 255, 255, 0.3)',
+                        right: 20,
+                        color: 'rgba(255, 255, 255, 0.25)',
                         fontFamily: 'monospace',
                         fontSize: '12px',
+                        pointerEvents: 'none',
                     }}
                 >
                     🔊 Audio Active

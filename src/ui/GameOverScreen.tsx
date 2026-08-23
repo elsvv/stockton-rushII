@@ -56,34 +56,100 @@ export function GameOverScreen({ gameState, onRestart, onMainMenu }: GameOverScr
         }, 300);
     }, [results.winner]);
 
-    // Gamepad X button to replay
+    // Keyboard shortcuts: Enter/Space = new game, R = same seed, Esc = main menu
     useEffect(() => {
-        let prevButtonStates: boolean[] = [];
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.repeat) return;
 
-        const checkGamepads = () => {
-            const gamepads = navigator.getGamepads();
-
-            // Check for X button (button 2) press on any gamepad to replay
-            for (const gp of gamepads) {
-                if (!gp) continue;
-
-                const xPressed = gp.buttons[2]?.pressed || false;
-                const wasPressed = prevButtonStates[gp.index] || false;
-
-                // Replay on button press (not hold)
-                if (xPressed && !wasPressed) {
+            switch (e.code) {
+                case 'Enter':
+                case 'Space':
+                    e.preventDefault();
                     onRestart(generateRandomSeed());
-                    return;
-                }
-
-                prevButtonStates[gp.index] = xPressed;
+                    break;
+                case 'KeyR':
+                    e.preventDefault();
+                    onRestart(gameState.seed);
+                    break;
+                case 'Escape':
+                    e.preventDefault();
+                    onMainMenu();
+                    break;
+                default:
+                    break;
             }
         };
 
-        const interval = setInterval(checkGamepads, 100);
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [onRestart, onMainMenu, gameState.seed]);
+
+    // Gamepad: A/X/START = new game, Y = same seed, B = main menu.
+    // Buttons already held when this screen appears are ignored (edge detection only),
+    // otherwise a button held while dying would skip the results instantly.
+    useEffect(() => {
+        const newGameButtons = [0, 2, 9];
+        const sameSeedButtons = [3];
+        const menuButtons = [1];
+        const watched = [...newGameButtons, ...sameSeedButtons, ...menuButtons];
+
+        const prevStates: Record<number, Record<number, boolean>> = {};
+        let armed = false;
+
+        const readStates = () => {
+            const states: Record<number, Record<number, boolean>> = {};
+            for (const gp of navigator.getGamepads()) {
+                if (!gp) continue;
+                states[gp.index] = {};
+                for (const button of watched) {
+                    states[gp.index][button] = gp.buttons[button]?.pressed || false;
+                }
+            }
+            return states;
+        };
+
+        const checkGamepads = () => {
+            const states = readStates();
+
+            if (!armed) {
+                // First tick just records the baseline
+                Object.assign(prevStates, states);
+                armed = true;
+                return;
+            }
+
+            for (const [indexKey, buttons] of Object.entries(states)) {
+                const index = Number(indexKey);
+                const prev = prevStates[index] || {};
+
+                for (const button of watched) {
+                    const pressed = buttons[button];
+                    const wasPressed = prev[button] || false;
+
+                    if (pressed && !wasPressed) {
+                        prevStates[index] = buttons;
+
+                        if (newGameButtons.includes(button)) {
+                            onRestart(generateRandomSeed());
+                            return;
+                        }
+                        if (sameSeedButtons.includes(button)) {
+                            onRestart(gameState.seed);
+                            return;
+                        }
+                        onMainMenu();
+                        return;
+                    }
+                }
+
+                prevStates[index] = buttons;
+            }
+        };
+
+        const interval = setInterval(checkGamepads, 60);
 
         return () => clearInterval(interval);
-    }, [onRestart]);
+    }, [onRestart, onMainMenu, gameState.seed]);
 
     // Animated background (darker, more somber)
     useEffect(() => {
@@ -266,6 +332,7 @@ export function GameOverScreen({ gameState, onRestart, onMainMenu }: GameOverScr
                             fontWeight: 'bold',
                             borderRadius: '8px',
                             border: 'none',
+                            order: 2,
                             backgroundColor: '#4A90D9',
                             color: '#FFFFFF',
                             cursor: 'pointer',
@@ -280,17 +347,19 @@ export function GameOverScreen({ gameState, onRestart, onMainMenu }: GameOverScr
                             e.currentTarget.style.transform = 'scale(1)';
                         }}
                     >
-                        🔄 REPLAY (Same Seed)
+                        🔁 SAME MAP <span style={{ opacity: 0.7, fontSize: '13px' }}>(R)</span>
                     </button>
 
                     <button
                         onClick={() => onRestart(generateRandomSeed())}
+                        autoFocus
                         style={{
                             padding: '16px 32px',
                             fontSize: '18px',
                             fontWeight: 'bold',
                             borderRadius: '8px',
                             border: 'none',
+                            order: 1,
                             backgroundColor: '#2E8B57',
                             color: '#FFFFFF',
                             cursor: 'pointer',
@@ -305,7 +374,7 @@ export function GameOverScreen({ gameState, onRestart, onMainMenu }: GameOverScr
                             e.currentTarget.style.transform = 'scale(1)';
                         }}
                     >
-                        🎲 NEW GAME
+                        🎲 NEW GAME <span style={{ opacity: 0.7, fontSize: '13px' }}>(Enter)</span>
                     </button>
 
                     <button
@@ -316,6 +385,7 @@ export function GameOverScreen({ gameState, onRestart, onMainMenu }: GameOverScr
                             fontWeight: 'bold',
                             borderRadius: '8px',
                             border: '2px solid #4A90D9',
+                            order: 3,
                             backgroundColor: 'transparent',
                             color: '#4A90D9',
                             cursor: 'pointer',
@@ -328,18 +398,24 @@ export function GameOverScreen({ gameState, onRestart, onMainMenu }: GameOverScr
                             e.currentTarget.style.backgroundColor = 'transparent';
                         }}
                     >
-                        🏠 MAIN MENU
+                        🏠 MAIN MENU <span style={{ opacity: 0.7, fontSize: '13px' }}>(Esc)</span>
                     </button>
                 </div>
 
                 <div
                     style={{
-                        marginTop: '30px',
-                        color: '#556',
-                        fontSize: '14px',
+                        marginTop: '26px',
+                        color: '#5A7A96',
+                        fontSize: '13px',
+                        fontFamily: 'monospace',
+                        lineHeight: 1.7,
                     }}
                 >
-                    Seed: {gameState.seed}
+                    <div>
+                        🎮 A / X / START — new game &nbsp;·&nbsp; Y — same map &nbsp;·&nbsp; B —
+                        main menu
+                    </div>
+                    <div style={{ color: '#556', marginTop: '6px' }}>Seed: {gameState.seed}</div>
                 </div>
             </div>
         </div>

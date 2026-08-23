@@ -26,6 +26,13 @@ export function MainMenu({ onStartGame }: MainMenuProps) {
         const seed = customSeed.trim()
             ? parseInt(customSeed, 10) || generateRandomSeed()
             : generateRandomSeed();
+
+        // Ask for fullscreen while we still have the user gesture from this click.
+        // Once granted it is kept for the whole session, including restarts.
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        }
+
         onStartGame(seed);
     }, [customSeed, onStartGame]);
 
@@ -488,6 +495,10 @@ export function MainMenu({ onStartGame }: MainMenuProps) {
                 }}
             >
                 A deterministic hot-seat 2-player submarine survival game
+                <div style={{ marginTop: '6px', color: '#445' }}>
+                    In game: P / START — pause · hold START or Backspace — restart round · Esc —
+                    leave fullscreen
+                </div>
             </div>
         </div>
     );

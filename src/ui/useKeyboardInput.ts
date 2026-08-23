@@ -64,6 +64,21 @@ function wasGamepadButtonJustPressed(
 }
 
 /**
+ * Snapshot current gamepad button states without emitting "just pressed" events.
+ * Used when returning from the pause menu so buttons held there don't fire actions.
+ */
+export function syncGamepadButtonStates(): void {
+    for (const gamepad of navigator.getGamepads()) {
+        if (!gamepad) continue;
+        const states: Record<number, boolean> = {};
+        gamepad.buttons.forEach((button, index) => {
+            states[index] = button.pressed;
+        });
+        prevGamepadButtonStates[gamepad.index] = states;
+    }
+}
+
+/**
  * Get movement state from a gamepad
  */
 function getGamepadMovement(gamepad: Gamepad): GamepadMovement {
@@ -326,15 +341,40 @@ export function useKeyboardInput() {
             delete prevGamepadButtonStates[e.gamepad.index];
         };
 
+        // Releasing focus (alt-tab, devtools, fullscreen prompt) can swallow keyup
+        // events and leave keys stuck down - reset everything when that happens.
+        const handleBlur = () => {
+            keyState.current = {
+                player1: { up: false, down: false, left: false, right: false },
+                player2: { up: false, down: false, left: false, right: false },
+            };
+            actionPressed.current = { player1: null, player2: null };
+        };
+
         window.addEventListener('gamepadconnected', handleGamepadConnect);
         window.addEventListener('gamepaddisconnected', handleGamepadDisconnect);
+        window.addEventListener('blur', handleBlur);
 
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
             window.removeEventListener('gamepadconnected', handleGamepadConnect);
             window.removeEventListener('gamepaddisconnected', handleGamepadDisconnect);
+            window.removeEventListener('blur', handleBlur);
         };
+    }, []);
+
+    /**
+     * Drop any buffered input (held keys and pending actions).
+     * Called on restart / resume so a key held during a menu doesn't leak into the round.
+     */
+    const clearInputs = useCallback(() => {
+        keyState.current = {
+            player1: { up: false, down: false, left: false, right: false },
+            player2: { up: false, down: false, left: false, right: false },
+        };
+        actionPressed.current = { player1: null, player2: null };
+        syncGamepadButtonStates();
     }, []);
 
     /**
@@ -436,5 +476,5 @@ export function useKeyboardInput() {
         };
     }, []);
 
-    return { sampleInputs, getGamepadCount, sampleMovementOnly };
+    return { sampleInputs, getGamepadCount, sampleMovementOnly, clearInputs };
 }
