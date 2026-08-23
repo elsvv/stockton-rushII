@@ -259,24 +259,6 @@ export function HUD({ gameState }: HUDProps) {
         >
             <PlayerHUD playerId="player1" gameState={gameState} side="left" />
             <PlayerHUD playerId="player2" gameState={gameState} side="right" />
-
-            {/* Seed display */}
-            <div
-                style={{
-                    position: 'absolute',
-                    bottom: 10,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    color: 'rgba(255, 255, 255, 0.4)',
-                    fontFamily: 'monospace',
-                    fontSize: '12px',
-                    backgroundColor: 'rgba(0,0,0,0.5)',
-                    padding: '4px 12px',
-                    borderRadius: '4px',
-                }}
-            >
-                Seed: {gameState.seed}
-            </div>
         </div>
     );
 }

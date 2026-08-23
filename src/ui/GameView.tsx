@@ -18,6 +18,9 @@ import type { PauseMenuAction } from './PauseMenu';
 import { soundEngine } from '../audio/SoundEngine';
 import { vibrateGamepad, VibrationPatterns } from '../audio/vibrationEngine';
 
+/** How long the controls hint stays up after the round starts */
+const CONTROLS_HINT_MS = 6000;
+
 /** How long "GAME OVER" stays on screen before the results screen */
 const GAME_OVER_DELAY_MS = 1500;
 
@@ -52,6 +55,9 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
     // Mouse cursor: hidden during play, but shown whenever the mouse moves so the
     // player can actually aim at the on-screen buttons.
     const [pointerVisible, setPointerVisible] = useState(true);
+
+    // Controls hint fades out once the round is under way - by then it's just clutter
+    const [hintVisible, setHintVisible] = useState(true);
 
     // Seed of the round currently being played (changes on in-game restart)
     const [currentSeed, setCurrentSeed] = useState(seed);
@@ -98,6 +104,17 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
         // a manual page reload to get back into a playable state.
         return () => clearTimeout(timer);
     }, []);
+
+    // Fade the controls hint a few seconds into the round (and bring it back on restart)
+    useEffect(() => {
+        if (!gameStarted) {
+            setHintVisible(true);
+            return;
+        }
+
+        const timer = window.setTimeout(() => setHintVisible(false), CONTROLS_HINT_MS);
+        return () => clearTimeout(timer);
+    }, [gameStarted]);
 
     // Show the cursor on movement, hide it again after a moment of stillness
     useEffect(() => {
@@ -775,6 +792,8 @@ export function GameView({ seed, onGameOver, onExitToMenu }: GameViewProps) {
                     backgroundColor: 'rgba(0,0,0,0.5)',
                     padding: '10px 20px',
                     borderRadius: '8px',
+                    opacity: hintVisible || paused ? 1 : 0,
+                    transition: 'opacity 1.2s ease-out',
                 }}
             >
                 <div style={{ marginBottom: '4px' }}>
