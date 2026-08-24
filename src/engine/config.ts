@@ -111,6 +111,28 @@ export const HP_PICKUP_CHANCE = 0.00015; // Rarer (was 0.0003) - about 1 per 600
 export const HP_PICKUP_SIZE = 20;
 export const HP_PICKUP_HEAL = 1;
 
+/**
+ * Hull motion when steering ("full" preset from the turn demo).
+ * Every value here is meant to be tweaked - nothing else depends on the exact numbers.
+ */
+/** Seconds for a full nose-to-nose flip */
+export const SUB_TURN_DURATION = 0.25;
+/** Steering inertia: 0 = snaps around, 1 = sluggish and heavy */
+export const SUB_STEER_INERTIA = 0.45;
+/** Roll into the turn, degrees at full sideways speed */
+export const SUB_MAX_TILT_DEG = 12;
+/** Nose dip while accelerating downward, degrees */
+export const SUB_MAX_PITCH_DEG = 8;
+/** How quickly roll and pitch catch up (higher = snappier) */
+export const SUB_TILT_EASE = 5;
+export const SUB_PITCH_EASE = 4;
+/** How lazily the light cone follows the hull (lower = more lag) */
+export const SUB_BEAM_EASE = 3.2;
+/** Bubble trail from the propeller */
+export const SUB_PROP_BUBBLES = true;
+export const SUB_BUBBLE_RISE = 26; // pixels per second
+export const SUB_BUBBLE_LIFETIME = 0.9; // seconds
+
 /** Vertical movement speed */
 export const VERTICAL_SPEED = 150; // pixels per second
 

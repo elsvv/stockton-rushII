@@ -64,6 +64,13 @@ import {
     ANGLER_FISH_SPEED_MULTIPLIER,
     ANGLER_FISH_DAMAGE,
     ANGLER_FISH_MAX_COUNT,
+    SUB_TURN_DURATION,
+    SUB_STEER_INERTIA,
+    SUB_MAX_TILT_DEG,
+    SUB_MAX_PITCH_DEG,
+    SUB_TILT_EASE,
+    SUB_PITCH_EASE,
+    SUB_BEAM_EASE,
 } from './config';
 
 /** Create initial passengers for a submarine */
@@ -340,6 +347,11 @@ export function createInitialState(config: EngineConfig): GameState {
         maxDepthReached: PLAYER_START_Y,
         invincibilityFrames: 0,
         passengers: createPassengers(),
+        facing: 1,
+        facingTarget: 1,
+        tilt: 0,
+        pitch: 0,
+        beamAngle: 0,
         implosionFrame: 0,
         rocketsRemaining: SMALL_ROCKET_COUNT,
         minesRemaining: 1,
@@ -474,6 +486,46 @@ function syncPassengersToHp(passengers: Passenger[], hp: number): Passenger[] {
 function withSyncedPassengers(player: PlayerVehicle): PlayerVehicle {
     const passengers = syncPassengersToHp(player.passengers, player.hp);
     return passengers === player.passengers ? player : { ...player, passengers };
+}
+
+const DEG_TO_RAD = Math.PI / 180;
+
+/**
+ * Update how the hull carries itself: which way it faces, how it rolls into a turn,
+ * how the nose dips while diving, and how lazily the light cone follows.
+ *
+ * Kept in the engine (not the renderer) so it stays deterministic and survives a
+ * restart or a replay, the same way passenger sway does.
+ */
+function updateHullMotion(
+    player: PlayerVehicle,
+    input: PlayerInputFrame,
+    /** Sideways speed normalised to -1..1 */
+    steerAmount: number,
+    dt: number
+): void {
+    const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    if (steer !== 0) {
+        player.facingTarget = steer;
+    }
+
+    // Facing sweeps through zero - that pass is what reads as the flip.
+    // Inertia stretches the sweep, so a heavier boat takes longer to come around.
+    const turnSeconds = Math.max(0.06, SUB_TURN_DURATION * (1 + SUB_STEER_INERTIA * 1.4));
+    const facingStep = (2 / turnSeconds) * dt;
+    const facingDelta = player.facingTarget - player.facing;
+    player.facing += Math.sign(facingDelta) * Math.min(Math.abs(facingDelta), facingStep);
+
+    const clampedSteer = Math.max(-1, Math.min(1, steerAmount));
+    const targetTilt = SUB_MAX_TILT_DEG * DEG_TO_RAD * clampedSteer;
+    const tiltEase = Math.max(0.5, SUB_TILT_EASE - SUB_STEER_INERTIA * 3);
+    player.tilt += (targetTilt - player.tilt) * Math.min(1, tiltEase * dt);
+
+    const dive = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+    const targetPitch = SUB_MAX_PITCH_DEG * DEG_TO_RAD * dive;
+    player.pitch += (targetPitch - player.pitch) * Math.min(1, SUB_PITCH_EASE * dt);
+
+    player.beamAngle += (player.tilt - player.beamAngle) * Math.min(1, SUB_BEAM_EASE * dt);
 }
 
 /**
@@ -680,6 +732,11 @@ function updatePlayer(
     // Update passenger physics
     if (newPlayer.state === PlayerState.Descending && newPlayer.passengers.length > 0) {
         newPlayer.passengers = updatePassengerPhysics(newPlayer.passengers, acceleration, dt);
+    }
+
+    // Hull turn / roll / pitch animation
+    if (newPlayer.state !== PlayerState.Dead) {
+        updateHullMotion(newPlayer, input, acceleration, dt);
     }
 
     // Vertical movement based on state

@@ -172,6 +172,16 @@ export interface PlayerVehicle {
     deathCause?: DeathCause;
     invincibilityFrames: number; // Brief invincibility after hit
     passengers: Passenger[]; // 4 passengers with physics
+    /** Which way the hull is drawn, -1..1; it passes through 0 mid-turn (the flip) */
+    facing: number;
+    /** Direction the hull is turning toward: -1 or 1 */
+    facingTarget: number;
+    /** Roll into the turn, radians */
+    tilt: number;
+    /** Nose dip while diving, lift while rising, radians */
+    pitch: number;
+    /** Light cone angle - trails `tilt` so the beam feels heavy, radians */
+    beamAngle: number;
     implosionFrame: number; // Frame counter for implosion animation (0 = not imploding)
     rocketsRemaining: number; // Small rockets (1 HP damage)
     minesRemaining: number; // Big mine (instant kill)

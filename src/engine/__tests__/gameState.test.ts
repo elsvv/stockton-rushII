@@ -320,6 +320,65 @@ describe('Passengers', () => {
     });
 });
 
+describe('Hull motion', () => {
+    function run(frames: number, overrides: Partial<PlayerInputFrame>, from = createInitialState(defaultConfig)) {
+        let state = from;
+        for (let i = 0; i < frames; i++) {
+            state = updateGameState(state, createInputs(i, { player1: overrides }), FIXED_DT);
+        }
+        return state;
+    }
+
+    it('starts facing right', () => {
+        const state = createInitialState(defaultConfig);
+        expect(state.players.player1.facing).toBe(1);
+        expect(state.players.player1.tilt).toBe(0);
+    });
+
+    it('turns the hull around when steering left, and back again', () => {
+        // A full flip takes SUB_TURN_DURATION stretched by inertia - well under 40 frames
+        const turned = run(40, { left: true });
+        expect(turned.players.player1.facing).toBeLessThan(0);
+        expect(turned.players.player1.facingTarget).toBe(-1);
+
+        const backAgain = run(40, { right: true }, turned);
+        expect(backAgain.players.player1.facing).toBeGreaterThan(0);
+        expect(backAgain.players.player1.facingTarget).toBe(1);
+    });
+
+    it('keeps facing after the stick is released', () => {
+        const turned = run(40, { left: true });
+        const coasting = run(30, {}, turned);
+        expect(coasting.players.player1.facing).toBeLessThan(0);
+    });
+
+    it('rolls into the turn and levels out', () => {
+        const left = run(20, { left: true });
+        expect(left.players.player1.tilt).toBeLessThan(0);
+
+        const right = run(40, { right: true }, left);
+        expect(right.players.player1.tilt).toBeGreaterThan(0);
+
+        const level = run(60, {}, right);
+        expect(Math.abs(level.players.player1.tilt)).toBeLessThan(0.01);
+    });
+
+    it('dips the nose while diving and lifts it while rising', () => {
+        const diving = run(30, { down: true });
+        expect(diving.players.player1.pitch).toBeGreaterThan(0);
+
+        const rising = run(30, { up: true });
+        expect(rising.players.player1.pitch).toBeLessThan(0);
+    });
+
+    it('lets the light beam trail the hull', () => {
+        const steering = run(6, { left: true });
+        const { tilt, beamAngle } = steering.players.player1;
+        // Beam is still catching up, so it has not reached the hull angle yet
+        expect(Math.abs(beamAngle)).toBeLessThan(Math.abs(tilt));
+    });
+});
+
 describe('World rescaling', () => {
     it('stretches every horizontal coordinate by the same factor', () => {
         let state = createInitialState(defaultConfig);

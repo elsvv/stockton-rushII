@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Разворот подлодки</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --abyss: #050f16;
+    --hull: #0c1c26;
+    --hull-2: #102633;
+    --line: #1c3a4c;
+    --ink: #cfe3ec;
+    --ink-dim: #7d9aab;
+    --ink-faint: #4e6b7c;
+    --amber: #f2a33c;
+    --kelp: #57d98c;
+    --sonar: #58c6e8;
+
+    --step-0: 0.78rem;
+    --step-1: 0.94rem;
+    --step-2: 1.15rem;
+    --step-3: 1.6rem;
+    --step-4: 2.4rem;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--abyss);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: var(--step-1);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: clamp(24px, 5vw, 56px) clamp(16px, 4vw, 40px) 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 12px; }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: var(--step-0);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  h1 {
+    font-family: 'Oxanium', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: var(--step-4);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .lede { margin: 0; max-width: 62ch; color: var(--ink-dim); }
+
+  .rigs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+
+  @media (max-width: 860px) { .rigs { grid-template-columns: 1fr; } }
+
+  .rig {
+    background: linear-gradient(180deg, var(--hull) 0%, #081720 100%);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .rig[data-active="true"] { border-color: var(--sonar); }
+
+  .rig-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rig-name {
+    font-family: 'Oxanium', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: var(--step-2);
+    letter-spacing: 0.01em;
+  }
+
+  .rig-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: var(--step-0);
+    color: var(--ink-faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .rig canvas { display: block; width: 100%; height: 190px; }
+
+  .rig-note {
+    padding: 10px 14px 14px;
+    font-size: var(--step-0);
+    color: var(--ink-dim);
+    border-top: 1px solid rgba(28, 58, 76, 0.6);
+    min-height: 62px;
+  }
+
+  .deck {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 14px;
+    background: var(--hull);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
+  button {
+    font-family: 'Oxanium', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: var(--step-1);
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    background: var(--hull-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 10px 18px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+
+  button:hover { border-color: var(--sonar); color: #fff; }
+  button:focus-visible { outline: 2px solid var(--sonar); outline-offset: 2px; }
+  button[aria-pressed="true"] { background: rgba(88, 198, 232, 0.16); border-color: var(--sonar); color: #eaf7fc; }
+  button:active { transform: translateY(1px); }
+
+  .deck-hint {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: var(--step-0);
+    color: var(--ink-faint);
+    margin-left: auto;
+  }
+
+  kbd {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    background: var(--hull-2);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 6px;
+    color: var(--ink);
+  }
+
+  .panels {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+
+  @media (max-width: 860px) { .panels { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--hull);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  h2 {
+    font-family: 'Oxanium', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: var(--step-2);
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+
+  .panel-sub {
+    margin: -10px 0 0;
+    font-size: var(--step-0);
+    color: var(--ink-faint);
+  }
+
+  .slider { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+
+  .slider label { font-size: var(--step-0); color: var(--ink-dim); }
+
+  .slider output {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: var(--step-0);
+    font-variant-numeric: tabular-nums;
+    color: var(--sonar);
+  }
+
+  input[type="range"] {
+    grid-column: 1 / -1;
+    width: 100%;
+    appearance: none;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--line);
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: var(--sonar);
+    border: 2px solid var(--abyss);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 15px; height: 15px;
+    border: 2px solid var(--abyss);
+    border-radius: 50%;
+    background: var(--sonar);
+  }
+
+  input[type="range"]:focus-visible { outline: 2px solid var(--sonar); outline-offset: 4px; }
+
+  .toggles { display: flex; flex-direction: column; gap: 10px; }
+
+  .toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: var(--step-0);
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+
+  .toggle input { margin: 3px 0 0; accent-color: var(--sonar); width: 15px; height: 15px; cursor: pointer; }
+  .toggle b { display: block; color: var(--ink); font-weight: 500; }
+
+  .readout {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: var(--step-0);
+    line-height: 1.85;
+    background: #071720;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 14px;
+    overflow-x: auto;
+    color: var(--ink-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .readout .k { color: var(--sonar); }
+  .readout .n { color: var(--amber); }
+  .readout .c { color: var(--ink-faint); }
+
+  footer {
+    font-size: var(--step-0);
+    color: var(--ink-faint);
+    border-top: 1px solid var(--line);
+    padding-top: 18px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+</head>
+<body>
+<div class="shell">
+  <header>
+    <span class="eyebrow">Titan Escape · превью механики</span>
+    <h1>Разворот подлодки</h1>
+    <p class="lede">
+      Три варианта поведения корпуса при манёвре влево-вправо. Реагируют на одно и то же нажатие,
+      так что разницу видно сразу. Крайний справа — настраиваемый: его цифры и уедут в игру.
+    </p>
+  </header>
+
+  <div class="rigs">
+    <section class="rig" id="rig-a">
+      <div class="rig-head"><span class="rig-name">A. Флип</span><span class="rig-tag">минимум</span></div>
+      <canvas data-variant="a" aria-label="Вариант A: только разворот носа"></canvas>
+      <p class="rig-note">Корпус разворачивается носом в сторону хода. Прожектор и винт меняются местами. Больше ничего.</p>
+    </section>
+
+    <section class="rig" id="rig-b">
+      <div class="rig-head"><span class="rig-name">B. Флип + крен</span><span class="rig-tag">середина</span></div>
+      <canvas data-variant="b" aria-label="Вариант B: разворот и крен корпуса"></canvas>
+      <p class="rig-note">То же плюс наклон корпуса в сторону движения. Лодка выглядит живее, но всё ещё послушная.</p>
+    </section>
+
+    <section class="rig" id="rig-c" data-active="true">
+      <div class="rig-head"><span class="rig-name">C. Полный</span><span class="rig-tag">настраивается</span></div>
+      <canvas data-variant="c" aria-label="Вариант C: разворот, крен, инерция и эффекты"></canvas>
+      <p class="rig-note">Разворот с запаздыванием, крен, клевок носом на разгоне, пузыри из винта, доворот луча.</p>
+    </section>
+  </div>
+
+  <div class="deck">
+    <button id="left" type="button">◀ Влево</button>
+    <button id="right" type="button">Вправо ▶</button>
+    <button id="auto" type="button" aria-pressed="true">Автопилот</button>
+    <span class="deck-hint"><kbd>A</kbd> <kbd>D</kbd> или <kbd>←</kbd> <kbd>→</kbd> — руль</span>
+  </div>
+
+  <div class="panels">
+    <section class="panel">
+      <h2>Настройка варианта C</h2>
+      <p class="panel-sub">Всё считается в секундах и градусах — ровно те величины, что попадут в движок.</p>
+
+      <div class="slider">
+        <label for="turn">Длительность разворота</label>
+        <output id="turn-out">0.25 с</output>
+        <input type="range" id="turn" min="0.08" max="0.6" step="0.01" value="0.25">
+      </div>
+
+      <div class="slider">
+        <label for="tilt">Крен на манёвре</label>
+        <output id="tilt-out">12°</output>
+        <input type="range" id="tilt" min="0" max="24" step="1" value="12">
+      </div>
+
+      <div class="slider">
+        <label for="inertia">Инерция (запаздывание руля)</label>
+        <output id="inertia-out">0.45</output>
+        <input type="range" id="inertia" min="0" max="1" step="0.05" value="0.45">
+      </div>
+
+      <div class="slider">
+        <label for="pitch">Клевок носом на разгоне</label>
+        <output id="pitch-out">8°</output>
+        <input type="range" id="pitch" min="0" max="18" step="1" value="8">
+      </div>
+
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" id="bubbles" checked><span><b>Пузыри из винта</b>Струя усиливается на манёвре и в момент разворота.</span></label>
+        <label class="toggle"><input type="checkbox" id="beam" checked><span><b>Луч с запаздыванием</b>Прожектор доворачивает за корпусом с задержкой.</span></label>
+        <label class="toggle"><input type="checkbox" id="crew" checked><span><b>Качка экипажа</b>Человечков в иллюминаторах ведёт по инерции — как в игре.</span></label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Что уедет в код</h2>
+      <p class="panel-sub">Скажи «беру C» — эти значения станут константами в config.ts.</p>
+      <div class="readout" id="readout"></div>
+    </section>
+  </div>
+
+  <footer>
+    Корпус, иллюминаторы, винт и конус света нарисованы тем же процедурным кодом, что и в игре, —
+    это не мокап, а тот самый рендер с добавленной анимацией.
+  </footer>
+</div>
+
+<script>
+(() => {
+  const PALETTE = {
+    water: '#3f7593',
+    waterDeep: '#1d4258',
+    hullP1: '#f2a33c',
+    crewP1: '#ff8a3d',
+    glass: '#4488aa',
+    glassDead: '#223344',
+    frame: '#243d4c',
+    prop: '#3d4a52',
+    beam: 'rgba(255, 246, 205, 0.10)',
+    bubble: 'rgba(190, 226, 240, 0.55)',
+  };
+
+  const PASSENGERS = 4;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const params = {
+    turn: 0.25,
+    tilt: 12,
+    inertia: 0.45,
+    pitch: 8,
+    bubbles: true,
+    beam: true,
+    crew: true,
+  };
+
+  /** One submarine simulation. Variant decides which parts of the motion are on. */
+  function createSub(variant) {
+    return {
+      variant,
+      facing: 1,        // -1..1, passes through 0 mid-turn
+      target: 1,
+      tilt: 0,
+      pitch: 0,
+      beamAngle: 0,
+      vx: 0,
+      x: 0.5,
+      bubbles: [],
+      crew: Array.from({ length: PASSENGERS }, () => ({ offset: 0, vel: 0 })),
+    };
+  }
+
+  const subs = [createSub('a'), createSub('b'), createSub('c')];
+  const canvases = new Map();
+
+  document.querySelectorAll('canvas[data-variant]').forEach((canvas) => {
+    canvases.set(canvas.dataset.variant, canvas);
+  });
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvases.forEach((canvas) => {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    });
+  }
+
+  window.addEventListener('resize', resize);
+
+  // ---------- input ----------
+  let keyInput = 0;
+  let buttonInput = 0;
+  let autopilot = !reduceMotion;
+  const held = new Set();
+
+  function readKeys() {
+    const left = held.has('ArrowLeft') || held.has('KeyA');
+    const right = held.has('ArrowRight') || held.has('KeyD');
+    keyInput = (right ? 1 : 0) - (left ? 1 : 0);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(e.code)) {
+      e.preventDefault();
+      held.add(e.code);
+      readKeys();
+      if (keyInput !== 0) setAutopilot(false);
+    }
+  });
+
+  window.addEventListener('keyup', (e) => { held.delete(e.code); readKeys(); });
+  window.addEventListener('blur', () => { held.clear(); readKeys(); });
+
+  const autoBtn = document.getElementById('auto');
+
+  function setAutopilot(on) {
+    autopilot = on;
+    autoBtn.setAttribute('aria-pressed', String(on));
+  }
+
+  autoBtn.addEventListener('click', () => setAutopilot(!autopilot));
+
+  function bindHold(id, direction) {
+    const btn = document.getElementById(id);
+    const press = (e) => { e.preventDefault(); buttonInput = direction; setAutopilot(false); };
+    const release = () => { if (buttonInput === direction) buttonInput = 0; };
+    btn.addEventListener('pointerdown', press);
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointerleave', release);
+    btn.addEventListener('pointercancel', release);
+  }
+
+  bindHold('left', -1);
+  bindHold('right', 1);
+
+  // ---------- controls ----------
+  const readout = document.getElementById('readout');
+
+  function renderReadout() {
+    const rows = [
+      ['TURN_DURATION', params.turn.toFixed(2), 'с на полный разворот'],
+      ['MAX_TILT_DEG', Math.round(params.tilt), 'градусов крена'],
+      ['STEER_INERTIA', params.inertia.toFixed(2), '0 — резко, 1 — вязко'],
+      ['MAX_PITCH_DEG', Math.round(params.pitch), 'клевок носом'],
+      ['PROP_BUBBLES', params.bubbles ? 'true' : 'false', ''],
+      ['BEAM_LAG', params.beam ? 'true' : 'false', ''],
+      ['CREW_SWAY', params.crew ? 'true' : 'false', ''],
+    ];
+    readout.innerHTML = rows
+      .map(([k, v, note]) => `<div><span class="k">${k}</span> = <span class="n">${v}</span>${note ? ` <span class="c">// ${note}</span>` : ''}</div>`)
+      .join('');
+  }
+
+  const sliders = [
+    ['turn', 'turn-out', (v) => v.toFixed(2) + ' с'],
+    ['tilt', 'tilt-out', (v) => Math.round(v) + '°'],
+    ['inertia', 'inertia-out', (v) => v.toFixed(2)],
+    ['pitch', 'pitch-out', (v) => Math.round(v) + '°'],
+  ];
+
+  sliders.forEach(([id, outId, format]) => {
+    const input = document.getElementById(id);
+    const out = document.getElementById(outId);
+    const sync = () => {
+      params[id] = parseFloat(input.value);
+      out.textContent = format(params[id]);
+      renderReadout();
+    };
+    input.addEventListener('input', sync);
+    sync();
+  });
+
+  ['bubbles', 'beam', 'crew'].forEach((id) => {
+    const input = document.getElementById(id);
+    const sync = () => { params[id] = input.checked; renderReadout(); };
+    input.addEventListener('change', sync);
+    sync();
+  });
+
+  // ---------- simulation ----------
+  const STEER_SPEED = 1.9;   // horizontal response
+  const DRAG = 4.2;
+
+  function updateSub(sub, input, dt, time) {
+    const full = sub.variant === 'c';
+    const withTilt = sub.variant !== 'a';
+
+    // Horizontal drift so the turn reads as movement, not a spin in place
+    sub.vx += input * STEER_SPEED * dt;
+    sub.vx -= sub.vx * DRAG * dt;
+    sub.x += sub.vx * dt * 0.5;
+    if (sub.x < 0.22) { sub.x = 0.22; sub.vx = Math.abs(sub.vx) * 0.3; }
+    if (sub.x > 0.78) { sub.x = 0.78; sub.vx = -Math.abs(sub.vx) * 0.3; }
+
+    if (input !== 0) sub.target = input;
+
+    // Facing sweeps through zero — that pass is the flip
+    const turnDuration = full ? params.turn : 0.25;
+    const lag = full ? 1 + params.inertia * 1.4 : 1;
+    const step = (2 / Math.max(0.06, turnDuration * lag)) * dt;
+    const delta = sub.target - sub.facing;
+    sub.facing += Math.sign(delta) * Math.min(Math.abs(delta), step);
+
+    // Roll into the turn
+    const maxTilt = withTilt ? (full ? params.tilt : 12) : 0;
+    const targetTilt = (maxTilt * Math.PI / 180) * Math.max(-1, Math.min(1, sub.vx * 2.2));
+    const tiltEase = full ? 5 - params.inertia * 3 : 7;
+    sub.tilt += (targetTilt - sub.tilt) * Math.min(1, tiltEase * dt);
+
+    // Nose dips while the boat picks up speed
+    const targetPitch = full ? (params.pitch * Math.PI / 180) * Math.max(-1, Math.min(1, Math.abs(sub.vx) * 2.4)) : 0;
+    sub.pitch += (targetPitch - sub.pitch) * Math.min(1, 4 * dt);
+
+    // Light cone trails the hull
+    const beamTarget = sub.tilt;
+    const beamEase = full && params.beam ? 3.2 : 40;
+    sub.beamAngle += (beamTarget - sub.beamAngle) * Math.min(1, beamEase * dt);
+
+    // Crew sway (same idea as the engine's passenger physics)
+    const swayOn = !full || params.crew;
+    sub.crew.forEach((p) => {
+      if (!swayOn) { p.offset += (0 - p.offset) * Math.min(1, 8 * dt); return; }
+      p.vel -= sub.vx * 26 * dt;
+      p.vel -= p.offset * 9 * dt;
+      p.vel *= 0.9;
+      p.offset = Math.max(-3.6, Math.min(3.6, p.offset + p.vel * dt * 60));
+    });
+
+    // Propeller bubbles
+    if (full && params.bubbles) {
+      const turning = Math.abs(sub.target - sub.facing) > 0.05;
+      const rate = (Math.abs(sub.vx) * 26 + (turning ? 40 : 4)) * dt;
+      if (Math.random() < rate) {
+        sub.bubbles.push({ x: 0, y: 0, r: 1.2 + Math.random() * 2.2, life: 1, drift: (Math.random() - 0.5) * 14 });
+      }
+    }
+
+    sub.bubbles = sub.bubbles.filter((b) => {
+      b.life -= dt * 1.5;
+      b.y -= (14 + b.r * 5) * dt;
+      b.x += b.drift * dt;
+      return b.life > 0;
+    });
+
+    if (sub.bubbles.length > 60) sub.bubbles.splice(0, sub.bubbles.length - 60);
+    void time;
+  }
+
+  // ---------- rendering ----------
+  function drawScene(ctx, w, h, time) {
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, PALETTE.water);
+    grad.addColorStop(1, PALETTE.waterDeep);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Drifting motes so vertical motion is felt
+    ctx.fillStyle = 'rgba(10, 40, 58, 0.18)';
+    for (let i = 0; i < 22; i++) {
+      const seed = i * 97.13;
+      const x = ((seed * 7.3) % w);
+      const y = ((seed * 13.7 + time * 26) % (h + 20)) - 10;
+      const r = 0.7 + ((i % 3) * 0.5);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawSub(ctx, sub, w, h) {
+    const width = 84;
+    const height = 42;
+    const cx = w * sub.x;
+    const cy = h * 0.54;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(sub.tilt * 0.6 + sub.pitch * 0.35);
+
+    // Bubbles live in hull space, behind everything, off the propeller
+    ctx.save();
+    ctx.scale(sub.facing >= 0 ? 1 : -1, 1);
+    sub.bubbles.forEach((b) => {
+      ctx.globalAlpha = Math.max(0, b.life) * 0.7;
+      ctx.fillStyle = PALETTE.bubble;
+      ctx.beginPath();
+      ctx.arc(-width / 2 - 10 + b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // The flip itself: horizontal squash through zero
+    const flip = Math.abs(sub.facing) < 0.06 ? 0.06 * Math.sign(sub.facing || 1) : sub.facing;
+    ctx.scale(flip, 1);
+
+    // Light cone (drawn first so the hull sits on top)
+    ctx.save();
+    ctx.rotate((sub.beamAngle - sub.tilt) * 0.8);
+    const beam = ctx.createLinearGradient(width / 2 - 6, 0, width / 2 + 72, 0);
+    beam.addColorStop(0, 'rgba(255, 248, 214, 0.30)');
+    beam.addColorStop(1, 'rgba(255, 248, 214, 0)');
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(width / 2 - 6, -5);
+    ctx.lineTo(width / 2 + 72, -34);
+    ctx.lineTo(width / 2 + 72, 34);
+    ctx.lineTo(width / 2 - 6, 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Propeller
+    ctx.fillStyle = PALETTE.prop;
+    ctx.beginPath();
+    ctx.ellipse(-width / 2 - 8, 0, 5, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#2b353b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-width / 2 - 8, -12);
+    ctx.lineTo(-width / 2 - 8, 12);
+    ctx.stroke();
+
+    // Hull
+    ctx.fillStyle = PALETTE.hullP1;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.beginPath();
+    ctx.ellipse(0, 3, width / 2 - 2, height / 2 - 2, 0, 0, Math.PI);
+    ctx.fill();
+
+    // Conning tower
+    ctx.fillStyle = PALETTE.hullP1;
+    ctx.beginPath();
+    ctx.ellipse(0, -height / 2 + 2, 10, 8, 0, Math.PI, 0);
+    ctx.fill();
+
+    // Portholes with crew
+    const spacing = width / (PASSENGERS + 1);
+    for (let i = 0; i < PASSENGERS; i++) {
+      const px = -width / 2 + spacing * (i + 1);
+      ctx.fillStyle = PALETTE.frame;
+      ctx.beginPath();
+      ctx.arc(px, 0, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.glass;
+      ctx.beginPath();
+      ctx.arc(px, 0, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      const p = sub.crew[i];
+      ctx.fillStyle = PALETTE.crewP1;
+      ctx.beginPath();
+      ctx.arc(px + p.offset, -1.5, 2.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(px + p.offset - 1.8, 0.6, 3.6, 3.4);
+    }
+
+    // Front viewport
+    ctx.fillStyle = PALETTE.frame;
+    ctx.beginPath();
+    ctx.arc(width / 2 - 12, 0, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#7fb3cd';
+    ctx.beginPath();
+    ctx.arc(width / 2 - 12, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+
+  function step(dt, time) {
+    const auto = autopilot ? Math.sign(Math.sin(time * 0.85)) : 0;
+    const input = buttonInput || keyInput || auto;
+
+    subs.forEach((sub) => {
+      const canvas = canvases.get(sub.variant);
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      updateSub(sub, input, dt, time);
+      const ctx = canvas.getContext('2d');
+      drawScene(ctx, rect.width, rect.height, time);
+      drawSub(ctx, sub, rect.width, rect.height);
+    });
+  }
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    step(dt, now / 1000);
+    requestAnimationFrame(frame);
+  }
+
+  resize();
+  renderReadout();
+  step(0, performance.now() / 1000); // первый кадр сразу, не дожидаясь rAF
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

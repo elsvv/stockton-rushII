@@ -16,7 +16,16 @@ import type {
     AnglerFish,
 } from '../engine/types';
 import { PlayerState, ObstacleType, ProjectileType, PickupType } from '../engine/types';
-import { COLORS, MAX_DEPTH, TITANIC_DEPTH, PASSENGER_COUNT } from '../engine/config';
+import {
+    COLORS,
+    MAX_DEPTH,
+    TITANIC_DEPTH,
+    PASSENGER_COUNT,
+    HORIZONTAL_SPEED,
+    SUB_PROP_BUBBLES,
+    SUB_BUBBLE_RISE,
+    SUB_BUBBLE_LIFETIME,
+} from '../engine/config';
 
 interface GameCanvasProps {
     gameState: GameState;
@@ -339,55 +348,83 @@ function drawSubmarine(
         return;
     }
 
-    // Main body (elongated ellipse - submarine shape)
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.ellipse(centerX, centerY, player.width / 2, player.height / 2, 0, 0, Math.PI * 2);
-    ctx.fill();
+    const halfWidth = player.width / 2;
+    const halfHeight = player.height / 2;
 
-    // Darker bottom half for depth
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.beginPath();
-    ctx.ellipse(centerX, centerY + 3, player.width / 2 - 2, player.height / 2 - 2, 0, 0, Math.PI);
-    ctx.fill();
+    // Everything below is drawn around (0, 0) so the hull can be rolled and flipped
+    ctx.translate(centerX, centerY);
+    ctx.rotate(player.tilt * 0.6 + player.pitch * 0.35);
 
-    // Conning tower (top fin)
-    ctx.fillStyle = color;
+    // The flip itself: horizontal squash through zero. Clamped so the hull never
+    // collapses into an invisible sliver at the halfway point.
+    const facing = player.facing;
+    const flip = Math.abs(facing) < 0.08 ? 0.08 * (facing < 0 ? -1 : 1) : facing;
+    ctx.scale(flip, 1);
+
+    // Light beam - trails the hull, drawn first so the sub sits on top of it
+    ctx.save();
+    ctx.rotate((player.beamAngle - player.tilt) * 0.8);
+    const beam = ctx.createLinearGradient(halfWidth - 5, 0, halfWidth + 50, 0);
+    beam.addColorStop(0, 'rgba(255, 252, 205, 0.22)');
+    beam.addColorStop(1, 'rgba(255, 252, 205, 0)');
+    ctx.fillStyle = beam;
     ctx.beginPath();
-    ctx.ellipse(centerX, centerY - player.height / 2 + 2, 10, 8, 0, Math.PI, 0);
+    ctx.moveTo(halfWidth - 5, -5);
+    ctx.lineTo(halfWidth + 50, -30);
+    ctx.lineTo(halfWidth + 50, 30);
+    ctx.lineTo(halfWidth - 5, 5);
+    ctx.closePath();
     ctx.fill();
+    ctx.restore();
 
     // Propeller at back
     ctx.fillStyle = '#444';
-    const propX = player.x - 8;
+    const propX = -halfWidth - 8;
     ctx.beginPath();
-    ctx.ellipse(propX, centerY, 5, 10, 0, 0, Math.PI * 2);
+    ctx.ellipse(propX, 0, 5, 10, 0, 0, Math.PI * 2);
     ctx.fill();
     // Propeller blades
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(propX, centerY - 12);
-    ctx.lineTo(propX, centerY + 12);
+    ctx.moveTo(propX, -12);
+    ctx.lineTo(propX, 12);
     ctx.stroke();
+
+    // Main body (elongated ellipse - submarine shape)
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, halfWidth, halfHeight, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Darker bottom half for depth
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.beginPath();
+    ctx.ellipse(0, 3, halfWidth - 2, halfHeight - 2, 0, 0, Math.PI);
+    ctx.fill();
+
+    // Conning tower (top fin)
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(0, -halfHeight + 2, 10, 8, 0, Math.PI, 0);
+    ctx.fill();
 
     // Draw portholes with passengers
     const portholeSpacing = player.width / (PASSENGER_COUNT + 1);
-    const portholeY = centerY;
 
     for (let i = 0; i < PASSENGER_COUNT; i++) {
-        const portholeX = player.x + portholeSpacing * (i + 1);
+        const portholeX = -halfWidth + portholeSpacing * (i + 1);
 
         // Porthole frame (darker)
         ctx.fillStyle = '#333';
         ctx.beginPath();
-        ctx.arc(portholeX, portholeY, 8, 0, Math.PI * 2);
+        ctx.arc(portholeX, 0, 8, 0, Math.PI * 2);
         ctx.fill();
 
         // Porthole glass (blue tint)
         ctx.fillStyle = player.passengers[i]?.alive ? '#4488AA' : '#223344';
         ctx.beginPath();
-        ctx.arc(portholeX, portholeY, 6, 0, Math.PI * 2);
+        ctx.arc(portholeX, 0, 6, 0, Math.PI * 2);
         ctx.fill();
 
         // Draw passenger if alive
@@ -395,7 +432,7 @@ function drawSubmarine(
             drawPassenger(
                 ctx,
                 portholeX,
-                portholeY,
+                0,
                 player.passengers[i],
                 isPlayer1 ? '#FF6600' : '#00CC66'
             );
@@ -405,21 +442,11 @@ function drawSubmarine(
     // Front viewport (larger)
     ctx.fillStyle = '#333';
     ctx.beginPath();
-    ctx.arc(player.x + player.width - 12, centerY, 10, 0, Math.PI * 2);
+    ctx.arc(halfWidth - 12, 0, 10, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#6699BB';
     ctx.beginPath();
-    ctx.arc(player.x + player.width - 12, centerY, 7, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Light beam from front
-    ctx.fillStyle = 'rgba(255, 255, 200, 0.1)';
-    ctx.beginPath();
-    ctx.moveTo(player.x + player.width - 5, centerY - 5);
-    ctx.lineTo(player.x + player.width + 50, centerY - 30);
-    ctx.lineTo(player.x + player.width + 50, centerY + 30);
-    ctx.lineTo(player.x + player.width - 5, centerY + 5);
-    ctx.closePath();
+    ctx.arc(halfWidth - 12, 0, 7, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.restore();
@@ -1035,16 +1062,91 @@ function drawAnglerFish(
     ctx.restore();
 }
 
+/** A propeller bubble, stored in world coordinates so it stays put as the camera scrolls */
+interface Bubble {
+    x: number;
+    y: number;
+    radius: number;
+    life: number;
+    drift: number;
+}
+
+type BubbleField = Record<PlayerId, Bubble[]>;
+
+const MAX_BUBBLES_PER_PLAYER = 40;
+
+/** Spawn and age the propeller trail. Purely cosmetic - the engine never sees these. */
+function updateBubbles(field: BubbleField, gameState: GameState, dt: number): void {
+    for (const playerId of ['player1', 'player2'] as const) {
+        const player = gameState.players[playerId];
+        let bubbles = field[playerId];
+
+        const alive = player.state === PlayerState.Descending;
+        if (SUB_PROP_BUBBLES && alive) {
+            const sideways = Math.min(1, Math.abs(player.velocityX) / HORIZONTAL_SPEED);
+            const turning = Math.abs(player.facingTarget - player.facing) > 0.05;
+            const spawnChance = (sideways * 14 + (turning ? 22 : 2)) * dt;
+
+            if (Math.random() < spawnChance && bubbles.length < MAX_BUBBLES_PER_PLAYER) {
+                // Bubbles come off the propeller, which sits behind the hull
+                const sternX =
+                    player.facing >= 0 ? player.x - 8 : player.x + player.width + 8;
+                bubbles.push({
+                    x: sternX,
+                    y: player.y + player.height / 2,
+                    radius: 1.2 + Math.random() * 2.2,
+                    life: SUB_BUBBLE_LIFETIME,
+                    drift: (Math.random() - 0.5) * 12,
+                });
+            }
+        }
+
+        bubbles = bubbles.filter((bubble) => {
+            bubble.life -= dt;
+            bubble.y -= (SUB_BUBBLE_RISE + bubble.radius * 4) * dt;
+            bubble.x += bubble.drift * dt;
+            return bubble.life > 0;
+        });
+
+        field[playerId] = bubbles;
+    }
+}
+
+/** Draw one player's bubble trail */
+function drawBubbles(
+    ctx: CanvasRenderingContext2D,
+    bubbles: Bubble[],
+    cameraY: number,
+    canvasHeight: number
+) {
+    for (const bubble of bubbles) {
+        const screenY = bubble.y - cameraY + canvasHeight / 2;
+        if (screenY < -20 || screenY > canvasHeight + 20) continue;
+
+        ctx.globalAlpha = Math.max(0, bubble.life / SUB_BUBBLE_LIFETIME) * 0.5;
+        ctx.fillStyle = 'rgba(220, 240, 250, 0.9)';
+        ctx.beginPath();
+        ctx.arc(bubble.x, screenY, bubble.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+}
+
 /** Draw a player (submarine or capsule) based on their state */
 function drawPlayer(
     ctx: CanvasRenderingContext2D,
     player: PlayerVehicle,
     playerId: PlayerId,
     cameraY: number,
-    canvasHeight: number
+    canvasHeight: number,
+    bubbles?: Bubble[]
 ) {
     const isPlayer1 = playerId === 'player1';
     const color = isPlayer1 ? COLORS.sub1 : COLORS.sub2;
+
+    if (bubbles && bubbles.length > 0) {
+        drawBubbles(ctx, bubbles, cameraY, canvasHeight);
+    }
 
     // Draw implosion animation for dead players
     if (player.state === PlayerState.Dead && player.implosionFrame > 0) {
@@ -1086,6 +1188,8 @@ function drawPlayer(
 
 export function GameCanvas({ gameState, width, height }: GameCanvasProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const bubblesRef = useRef<BubbleField>({ player1: [], player2: [] });
+    const lastDrawRef = useRef<number>(0);
 
     // Preload sprites on mount
     useEffect(() => {
@@ -1101,6 +1205,13 @@ export function GameCanvas({ gameState, width, height }: GameCanvasProps) {
 
         const { players, obstacles } = gameState;
         const cameraMode = getCameraMode(players);
+
+        // Cosmetic particles run on wall-clock time, not the fixed simulation step
+        const now = performance.now();
+        const dt =
+            lastDrawRef.current === 0 ? 0 : Math.min(0.05, (now - lastDrawRef.current) / 1000);
+        lastDrawRef.current = now;
+        updateBubbles(bubblesRef.current, gameState, dt);
 
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
@@ -1165,8 +1276,22 @@ export function GameCanvas({ gameState, width, height }: GameCanvasProps) {
             }
 
             // Draw players
-            drawPlayer(ctx, players.player1, 'player1', focusDepth, height);
-            drawPlayer(ctx, players.player2, 'player2', focusDepth, height);
+            drawPlayer(
+                ctx,
+                players.player1,
+                'player1',
+                focusDepth,
+                height,
+                bubblesRef.current.player1
+            );
+            drawPlayer(
+                ctx,
+                players.player2,
+                'player2',
+                focusDepth,
+                height,
+                bubblesRef.current.player2
+            );
 
             // Apply darkness overlay based on depth
             const darknessOpacity = getDarknessOverlay(focusDepth);
@@ -1214,7 +1339,14 @@ export function GameCanvas({ gameState, width, height }: GameCanvasProps) {
                 for (const fish of gameState.anglerFish) {
                     drawAnglerFish(ctx, fish, cameraY, height, gameState.frame);
                 }
-                drawPlayer(ctx, topPlayerData, cameraMode.topPlayer, cameraY, height);
+                drawPlayer(
+                    ctx,
+                    topPlayerData,
+                    cameraMode.topPlayer,
+                    cameraY,
+                    height,
+                    bubblesRef.current[cameraMode.topPlayer]
+                );
 
                 // Darkness overlay
                 const darknessOpacity = getDarknessOverlay(topPlayerData.y);
@@ -1277,7 +1409,14 @@ export function GameCanvas({ gameState, width, height }: GameCanvasProps) {
                 for (const fish of gameState.anglerFish) {
                     drawAnglerFish(ctx, fish, cameraY, height, gameState.frame);
                 }
-                drawPlayer(ctx, bottomPlayerData, cameraMode.bottomPlayer, cameraY, height);
+                drawPlayer(
+                    ctx,
+                    bottomPlayerData,
+                    cameraMode.bottomPlayer,
+                    cameraY,
+                    height,
+                    bubblesRef.current[cameraMode.bottomPlayer]
+                );
 
                 // Darkness overlay
                 const darknessOpacity = getDarknessOverlay(bottomPlayerData.y);
